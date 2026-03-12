@@ -1,21 +1,19 @@
-﻿禁用某个Windows更新包
+﻿# 禁用某个 Windows 更新包
 
-
-
-- 安装PSWindowsUpdate
+## 1. 安装 PSWindowsUpdate
 
 ```powershell
 Install-PackageProvider -Name NuGet -Force
 Install-Module PSWindowsUpdate -Force
 ```
 
-- 隐藏更新，如隐藏KB5071547
+## 2. 隐藏更新（示例：KB5071547）
 
 ```powershell
 Hide-WindowsUpdate -KBArticleID KB5071547 -Confirm:$false
 ```
 
-- 确认是否已经隐藏
+## 3. 确认是否已隐藏
 
 ```powershell
 Get-WindowsUpdate -MicrosoftUpdate

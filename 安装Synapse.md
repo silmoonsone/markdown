@@ -1,11 +1,14 @@
-﻿- 拉取镜像
+﻿# 安装 Synapse
+
+## 1. 拉取镜像
 
 ```bash
 docker pull matrixdotorg/synapse:latest
 ```
 
-- 使用镜像内部工具生成配置
-  注意im.host.com改成自己的域名\主机名
+## 2. 使用镜像内部工具生成配置
+
+> 注意im.host.com改成自己的域名\主机名
 
 ```bash
 docker run -it --rm \
@@ -21,10 +24,11 @@ docker run -it --rm \
   matrixdotorg/synapse:latest generate
 ```
 
-- 创建PostgreSQL
-   注意参数使用 Collation&Character type "C"
+## 3. 创建PostgreSQL
 
-- 更新配置文件设置数据库连接信息
+> 注意参数使用 Collation&Character type "C"
+
+## 4. 更新配置文件设置数据库连接信息
 
 ```yaml
 database:
@@ -37,7 +41,7 @@ database:
     port: 5432
 ```
 
-- 运行容器
+## 5. 运行容器
 
 ```bash
 docker run -d \
@@ -47,19 +51,19 @@ docker run -d \
   matrixdotorg/synapse:latest
 ```
 
-- 创建第一个用户
+## 6. 创建第一个用户
 
 ```bash
 docker exec -it synapse register_new_matrix_user -c /data/homeserver.yaml http://localhost:8008
 ```
 
-- 安装Web管理
+## 7. 安装Web管理
 
 ```bash
 docker run -d -p 8080:80 awesometechnologies/synapse-admin
 ```
 
-- 启用全集用户搜索和查找
+## 8. 启用全集用户搜索和查找
 
 ```yaml
 user_directory:
@@ -67,7 +71,7 @@ user_directory:
   search_all_users: true
 ```
 
-- 设置限制
+## 9. 设置限制
 
 ```yaml
 ###############################################################################
