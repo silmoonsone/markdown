@@ -32,7 +32,24 @@ else return null;
 - 该偏好不仅限于方法，也适用于类似“参数/元素列表”场景（如构造调用、特性参数等）。
 - 只有在明显过长、影响阅读时才换行，不按机械阈值强制拆行。
 
-## 4. 复用 Silmoon 库（长期习惯）
+## 4. 链式调用与 LINQ 换行偏好
+
+- 链式调用默认尽量保持单行，不要为了“看起来整齐”主动拆行。
+- 尤其是可读性仍然清晰时，`Split(...).Select(...).Where(...)` 这类链式表达式应保持一行。
+- 只有在表达式明显过长、已经影响阅读时才允许换行。
+- 明确偏好示例：
+  - 不偏好：
+    ```csharp
+    var encodedPath = string.Join('/', filePath
+        .Split('/', StringSplitOptions.RemoveEmptyEntries)
+        .Select(Uri.EscapeDataString));
+    ```
+  - 偏好：
+    ```csharp
+    var encodedPath = string.Join('/', filePath.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(Uri.EscapeDataString));
+    ```
+
+## 5. 复用 Silmoon 库（长期习惯）
 
 - 我长期使用自有可复用库/包（`Silmoon`），这是稳定习惯。
 - 判空优先使用扩展方法风格：
@@ -47,7 +64,7 @@ else return null;
 - `public class StateSet<TState> { public TState State { get; set; } public string Message { get; set; } }`
 - `public class StateSet<TState, TData> : StateSet<TState> { public TData Data { get; set; } }`
 
-## 5. StateSet 返回值语义
+## 6. StateSet 返回值语义
 
 - 当代码返回 `StateSet` 相关类型时，请按我的统一语义理解：
   - `State`：状态
@@ -55,7 +72,7 @@ else return null;
   - `Data`（泛型版本）：附带数据
 - 不要把它当作一次性临时结构；它是我的通用返回模型。
 
-## 6. 注释规则（硬约束）
+## 7. 注释规则（硬约束）
 
 - 默认不要主动添加注释。
 - 除非代码确实难以理解，否则不写注释。
@@ -63,7 +80,7 @@ else return null;
 - 仅允许在本次新增/修改的代码片段中，按需添加少量注释。
 - 注释应解释复杂意图，不解释显而易见的代码。
 
-## 7. 对大模型的执行要求
+## 8. 对大模型的执行要求
 
 - 先遵循现有风格，再考虑个人偏好的“最佳实践”。
 - 不要因“看起来更规范”而大规模改写无关代码。
