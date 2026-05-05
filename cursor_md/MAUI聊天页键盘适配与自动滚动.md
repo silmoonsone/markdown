@@ -1,4 +1,4 @@
-# MAUI Chat 键盘适配与自动滚动通用知识库（iOS）
+# MAUI聊天页键盘适配与自动滚动（iOS）
 
 ## 文档用途
 - 这是 MAUI 聊天页在 iOS 上“键盘适配 + 流式自动滚动”的通用知识库。
@@ -32,6 +32,9 @@
 - 键盘变化时不平移输入栏，而是调整 `RootLayout.Padding.Bottom`：
   - 根据 `InputBar` 和键盘的实际重叠量计算 `requiredInset`。
   - 这样会触发整体重排，历史区被压缩，避免“内容和输入框叠一起”。
+- 在键盘弹出并完成避让后，建议补一次“强制滚到底部”：
+  - `await ScrollHistoryToBottomAsync(true, true);`
+  - 用途：解决“未弹键盘时在底部，但键盘弹出后 ScrollView 短暂遮挡且未自动回底”的问题。
 
 ### 3) 聊天历史自动滚动（含“上滑暂停，回底恢复”）
 - 在页面维护状态：
@@ -74,7 +77,6 @@
                         </Border>
                     </DataTemplate>
                 </BindableLayout.ItemTemplate>
-                <Label Text="{x:Binding Output}" LineBreakMode="WordWrap" />
             </StackLayout>
         </ScrollView>
 
@@ -106,8 +108,7 @@ public partial class Chat : ContentPage
 
     public Task ScrollHistoryToBottomAsync(bool animated = true, bool force = false)
     {
-        if (!force && !shouldAutoScroll)
-            return Task.CompletedTask;
+        if (!force && !shouldAutoScroll) return Task.CompletedTask;
 
         return MainThread.InvokeOnMainThreadAsync(async () =>
         {
@@ -166,10 +167,8 @@ public partial class Chat : ContentPage
     {
         MainThread.BeginInvokeOnMainThread(async () =>
         {
-            if (Handler?.PlatformView is not UIView pageView || pageView.Window is null)
-                return;
-            if (InputBar.Handler?.PlatformView is not UIView inputBarView)
-                return;
+            if (Handler?.PlatformView is not UIView pageView || pageView.Window is null) return;
+            if (InputBar.Handler?.PlatformView is not UIView inputBarView) return;
 
             // 同一坐标系下计算重叠量
             var keyboardFrameInPage = pageView.ConvertRectFromView(args.FrameEnd, null);
@@ -179,6 +178,7 @@ public partial class Chat : ContentPage
             // 用布局内边距触发重排（历史区会被压缩）
             var requiredInset = Math.Max(0, overlap + 2);
             RootLayout.Padding = new Thickness(0, 0, 0, requiredInset);
+            await ScrollHistoryToBottomAsync(true, true);
             await Task.CompletedTask;
         });
     }
@@ -227,6 +227,8 @@ public async Task Chat()
 }
 ```
 
+说明：此模板采用 `Items` 作为唯一消息数据源。
+
 ### D. `App.xaml.cs`（与键盘相关的通用注意点）
 ```csharp
 protected override Window CreateWindow(IActivationState? activationState)
@@ -252,7 +254,7 @@ protected override Window CreateWindow(IActivationState? activationState)
 ## 一次性落地补充（建议纳入实现）
 
 ### 1) 生命周期与事件订阅防重复
-- `NativeChatClient` 相关事件建议在 `Loaded` 订阅、`Unloaded` 解除订阅，避免页面反复进入后重复回调。
+- 当前项目是 `AgentClient.NativeChatClient` 事件源；跨项目时替换为对应流式事件源。
 - 当前代码里 `Loaded/Unloaded` 解除逻辑有注释痕迹，后续若重构需确认“订阅与解除是一一对应”的。
 - 经验法则：页面类负责 UI 生命周期，ViewModel 只做纯状态更新更稳。
 
@@ -269,6 +271,7 @@ protected override Window CreateWindow(IActivationState? activationState)
 ### 4) 用户意图优先策略
 - 自动滚动只在 `shouldAutoScroll=true` 时执行（当前已实现）。
 - `force=true` 仅用于“用户主动发送后跳到底部”（当前已实现），不要用于流式过程。
+- 例外：键盘弹出后的一次性“布局修正滚动”可使用 `force=true`，用于消除键盘出现瞬间的底部遮挡。
 - 阈值 `AutoScrollBottomThreshold=24` 可按设备 DPI 微调（常用区间 `16~48`）。
 
 ### 5) 输入区交互体验细节
@@ -283,11 +286,15 @@ protected override Window CreateWindow(IActivationState? activationState)
 
 ## 项目特有代码替换表（落地前先做映射）
 - `IntelligenceService`：替换为你自己的聊天服务接口（如 `IChatService`）。
-- `NativeChatClient.OnStreamOutput*`：替换为你自己的流式回调事件或 `IAsyncEnumerable`。
+- `AgentClient.NativeChatClient.OnStreamOutput*`：替换为你自己的流式回调事件或 `IAsyncEnumerable`。
 - `ChatItem` 字段（`Role/Content`）：按你的消息模型字段改名（如 `Sender/Text`）。
 - `IsNotNullOrEmptyConvert`：若无该转换器，用 `string.IsNullOrWhiteSpace` 对应的命令可执行状态替代。
 - `DisplayAlertAsync` / `Input` 校验：按项目 UI 框架与交互规范替换。
 - 颜色与样式资源（`Gray950/Gray100`）：按你的主题资源表替换。
+
+## 代码风格说明（避免误解）
+- 示例中出现的 `await Task.CompletedTask;` 主要用于保持异步结构清晰，不是必须写法。
+- 如果团队规范倾向简洁，可在不影响逻辑时删除这些占位 `await`。
 
 ## 最小可移植清单（跨项目复制时）
 1. 复制 `Grid(*,Auto)` + `InputBar` + `HistoryScrollView` 布局骨架。
@@ -299,6 +306,7 @@ protected override Window CreateWindow(IActivationState? activationState)
 ## 常见问题与处理
 - 输入栏被键盘遮挡：检查是否正确注册 `ObserveWillChangeFrame`。
 - 输入栏抬得过高：检查是否叠加了系统自动滚动；减小 `overlap + 2` 中缓冲值。
+- 键盘弹出后列表底部被遮住一点点：在键盘 frame 回调内补 `await ScrollHistoryToBottomAsync(true, true)`。
 - 切换输入法后才正常：通常是键盘 frame 处理时机不对，优先用 `WillChangeFrame`。
 - 页面离开后下次布局异常：确认 `OnDisappearing` 里恢复了 `KeyboardAutoManagerScroll.Connect()` 且 `RootLayout.Padding` 清零。
 - 流式输出不自动滚到底：确认输出更新后有调用 `ScrollHistoryToBottomAsync(false)`。
@@ -312,6 +320,7 @@ protected override Window CreateWindow(IActivationState? activationState)
 - 切换输入法前后对比。
 - 历史记录为空、少量、大量三种状态。
 - 有无发送按钮点击后焦点变化场景。
+- 未弹键盘时在最底部，点击输入框后仍保持在最底部（不出现“被遮挡一截”）。
 - AI 连续流式输出时，保持在底部会持续跟随最新内容。
 - AI 连续流式输出时，手动上滑后不会被强制拉回底部。
 - 流式输出中手动滚到底部后，会恢复自动跟随。
@@ -320,6 +329,7 @@ protected override Window CreateWindow(IActivationState? activationState)
 - 已实现：输入栏与内容区域分离，聊天记录会随键盘压缩。
 - 已保留：`HideSoftInputOnTapped="True"`。
 - 已实现：流式输出自动滚动 + 用户上滑暂停 + 回到底部恢复。
+- 已实现：点击输入框弹出键盘后，补一次强制滚动到底部，修复底部短暂遮挡。
 - iOS 目标已编译通过：`dotnet build -f net10.0-ios`。
 
 ## 实施优先级（下次从零开始可按此顺序）
@@ -328,3 +338,276 @@ protected override Window CreateWindow(IActivationState? activationState)
 3. 接入 `Scrolled` + `shouldAutoScroll` 状态机与 `force` 策略。
 4. 接入流式输出写入与滚动调用点（输出中、输出完成、发送后）。
 5. 做生命周期/空引用/节流加固，再跑回归清单。
+
+## 当前项目完整 Demo（以当前代码为准）
+
+> 本节是“可直接对照”的完整示例，内容已按当前 `Chat.xaml` 与 `Chat.xaml.cs` 更新。  
+> 如果后续代码再改，这一节也需要同步更新。
+
+### 1) `Chat.xaml`（当前完整版本）
+```xml
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:ios="clr-namespace:Microsoft.Maui.Controls.PlatformConfiguration.iOSSpecific;assembly=Microsoft.Maui.Controls"
+             x:Class="Silmoon.Intelligence.MauiClient.Pages.Chat"
+             xmlns:page="clr-namespace:Silmoon.Intelligence.MauiClient.Pages"
+             xmlns:models="clr-namespace:Silmoon.Intelligence.MauiClient.Models"
+             x:DataType="page:ChatViewModel"
+             HideSoftInputOnTapped="True"
+             Title="Chat">
+    <Grid x:Name="RootLayout" RowDefinitions="*,Auto" RowSpacing="0">
+        <ScrollView x:Name="HistoryScrollView" Grid.Row="0" VerticalScrollBarVisibility="Always" Padding="8" Scrolled="HistoryScrollView_Scrolled">
+            <StackLayout BindableLayout.ItemsSource="{x:Binding Items}">
+                <BindableLayout.ItemTemplate>
+                    <DataTemplate x:DataType="models:ChatItem">
+                        <Border Padding="5" Margin="0,0,0,10" BackgroundColor="{AppThemeBinding Dark={StaticResource Gray950}, Light={StaticResource Gray100}}" StrokeThickness="0" StrokeShape="RoundRectangle 12">
+                            <StackLayout>
+                                <Label Text="{x:Binding Role}" FontAttributes="Bold" />
+                                <Label Text="{x:Binding Content}" LineBreakMode="WordWrap" />
+                            </StackLayout>
+                        </Border>
+                    </DataTemplate>
+                </BindableLayout.ItemTemplate>
+            </StackLayout>
+        </ScrollView>
+
+        <Grid x:Name="InputBar" Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8" Padding="8">
+            <Entry Grid.Column="0" Text="{x:Binding Input}" HorizontalOptions="Fill" />
+            <Button Grid.Column="1" Text="发送" Command="{x:Binding ChatCommand}" IsEnabled="{x:Binding Input, Converter={StaticResource IsNotNullOrEmptyConvert}}" />
+        </Grid>
+    </Grid>
+</ContentPage>
+```
+
+### 2) `Chat.xaml.cs`（当前完整版本）
+```csharp
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Silmoon.AI.Models;
+using Silmoon.AI.Models.OpenAI.Enums;
+using Silmoon.AI.Models.OpenAI.Models;
+using Silmoon.Extensions;
+using Silmoon.Intelligence.MauiClient.Services;
+using Silmoon.Models;
+using System.Collections.Concurrent;
+using System.Collections.ObjectModel;
+using Silmoon.Intelligence.MauiClient.Models;
+
+#if IOS
+using Foundation;
+using Microsoft.Maui.Platform;
+using UIKit;
+#endif
+
+namespace Silmoon.Intelligence.MauiClient.Pages;
+
+public partial class Chat : ContentPage
+{
+    public IntelligenceService intelligenceService;
+    const double AutoScrollBottomThreshold = 24;
+    bool shouldAutoScroll = true;
+#if IOS
+    NSObject? keyboardWillChangeFrameObserver;
+    NSObject? keyboardWillHideObserver;
+#endif
+
+    ChatViewModel viewModel;
+    public Chat()
+    {
+        intelligenceService = App.ServiceProvider.GetRequiredService<IntelligenceService>();
+        InitializeComponent();
+        BindingContext = viewModel = new ChatViewModel(this);
+    }
+
+    public Task ScrollHistoryToBottomAsync(bool animated = true, bool force = false)
+    {
+        if (!force && !shouldAutoScroll) return Task.CompletedTask;
+
+        return MainThread.InvokeOnMainThreadAsync(async () =>
+        {
+            // Wait a tick so new content can be measured before scrolling.
+            await Task.Delay(16);
+            await HistoryScrollView.ScrollToAsync(0, double.MaxValue, animated);
+        });
+    }
+
+    void HistoryScrollView_Scrolled(object? sender, ScrolledEventArgs e)
+    {
+        var maxScrollY = Math.Max(0, HistoryScrollView.ContentSize.Height - HistoryScrollView.Height);
+        var distanceToBottom = maxScrollY - e.ScrollY;
+        shouldAutoScroll = distanceToBottom <= AutoScrollBottomThreshold;
+    }
+
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+#if IOS
+        KeyboardAutoManagerScroll.Disconnect();
+        RegisterKeyboardObservers();
+#endif
+    }
+
+    protected override void OnDisappearing()
+    {
+#if IOS
+        UnregisterKeyboardObservers();
+        KeyboardAutoManagerScroll.Connect();
+        RootLayout.Padding = new Thickness(0);
+#endif
+        base.OnDisappearing();
+    }
+
+#if IOS
+    void RegisterKeyboardObservers()
+    {
+        if (keyboardWillChangeFrameObserver is not null) return;
+
+        keyboardWillChangeFrameObserver = UIKeyboard.Notifications.ObserveWillChangeFrame((_, args) => OnKeyboardWillChangeFrame(args));
+        keyboardWillHideObserver = UIKeyboard.Notifications.ObserveWillHide((_, args) => OnKeyboardWillHide(args));
+    }
+
+    void UnregisterKeyboardObservers()
+    {
+        keyboardWillChangeFrameObserver?.Dispose();
+        keyboardWillChangeFrameObserver = null;
+        keyboardWillHideObserver?.Dispose();
+        keyboardWillHideObserver = null;
+    }
+
+    void OnKeyboardWillChangeFrame(UIKeyboardEventArgs args)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            if (Handler?.PlatformView is not UIView pageView || pageView.Window is null) return;
+            if (InputBar.Handler?.PlatformView is not UIView inputBarView) return;
+
+            // Convert frames to page-view coordinates, then compute actual overlap with input bar.
+            var keyboardFrameInPage = pageView.ConvertRectFromView(args.FrameEnd, null);
+            var inputBarFrameInPage = pageView.ConvertRectFromView(inputBarView.Bounds, inputBarView);
+            var overlap = Math.Max(0, inputBarFrameInPage.Bottom - keyboardFrameInPage.Top);
+            var requiredInset = Math.Max(0, overlap + 2); // keep a tiny visual gap
+            RootLayout.Padding = new Thickness(0, 0, 0, requiredInset);
+            await ScrollHistoryToBottomAsync(true, true);
+            await Task.CompletedTask;
+        });
+    }
+
+    void OnKeyboardWillHide(UIKeyboardEventArgs args)
+    {
+        MainThread.BeginInvokeOnMainThread(async () =>
+        {
+            RootLayout.Padding = new Thickness(0);
+            await Task.CompletedTask;
+        });
+    }
+#endif
+}
+public partial class ChatViewModel : ObservableObject
+{
+    Chat page;
+    [ObservableProperty]
+    public partial ObservableCollection<ChatItem> Items { get; set; } = [];
+    [ObservableProperty]
+    public partial string Input { get; set; }
+
+    public ChatViewModel(Chat page)
+    {
+        this.page = page;
+        page.Title = $"Chat ({page.intelligenceService.AgentClient.NativeChatClient.ModelName})";
+        page.intelligenceService.AgentClient.NativeChatClient.OnStreamOutput += NativeChatClient_OnStreamOutput;
+        page.intelligenceService.AgentClient.NativeChatClient.OnStreamOutputCompleted += NativeChatClient_OnStreamOutputCompleted;
+        page.intelligenceService.AgentClient.NativeChatClient.OnToolCallStart += NativeChatClient_OnToolCallStart;
+        page.intelligenceService.AgentClient.NativeChatClient.OnToolCallCompleted += NativeChatClient_OnToolCallCompleted;
+    }
+
+    private async Task<ConcurrentDictionary<string, ToolCallResult>> NativeChatClient_OnToolCallCompleted(ConcurrentDictionary<string, ToolCallResult> toolCallResults)
+    {
+        var lastChatItem = Items.LastOrDefault();
+
+        foreach (var toolCallResult in toolCallResults.Values)
+        {
+            if (toolCallResult.Result.State) lastChatItem.Content += $"[TOOL RESULT] State: {toolCallResult.Result.State}, Message: {toolCallResult.Result.Message}\r\n";
+            else lastChatItem.Content += $"[TOOL RESULT] State: {toolCallResult.Result.State}, Message: {toolCallResult.Result.Message}\r\n";
+        }
+        return await Task.FromResult(toolCallResults);
+    }
+    private async Task<List<ToolCallResult>> NativeChatClient_OnToolCallStart(ToolCallParameter[] toolCallParameters, ConcurrentDictionary<string, ToolCallResult> toolCallResults)
+    {
+        var lastChatItem = Items.LastOrDefault();
+
+        List<ToolCallResult> results = [];
+
+        foreach (var parameter in toolCallParameters)
+        {
+            var functionName = parameter.FunctionName;
+            var parameters = parameter.Parameters;
+
+            lastChatItem.Content += $"[TOOL CALL] {functionName}\r\n";
+            switch (functionName)
+            {
+                case "ToolCallTestTool":
+                    results.Add(ToolCallResult.Create(parameter, true.ToStateSet<string>($"这是一个工具调用环境测试，正常！")));
+                    break;
+                default:
+                    break;
+            }
+        }
+        return results;
+    }
+    private Task NativeChatClient_OnStreamOutputCompleted(Result result)
+    {
+        var lastChatItem = Items.LastOrDefault();
+
+        lastChatItem.Content += $"\r\n[finish {result.FinishReason}]";
+        if (result.FinishReason != "stop")
+        {
+            lastChatItem.Content += "\r\n";
+        }
+        _ = page.ScrollHistoryToBottomAsync();
+        return Task.CompletedTask;
+    }
+    private void NativeChatClient_OnStreamOutput(StateSet<bool, Chunk> chunkState)
+    {
+        if (chunkState.State)
+        {
+            chunkState.Data.Choices.Each(x =>
+            {
+                var lastChatItem = Items.LastOrDefault();
+                if (x.Delta?.ToolCalls is not null)
+                {
+                    lastChatItem.Content += ".";
+                }
+                else
+                {
+                    Console.WriteWithColor(x?.Delta?.GetThinking(), ConsoleColor.DarkGray);
+                    Console.WriteWithColor(x?.Delta?.Content, ConsoleColor.White);
+
+                    lastChatItem.Content += x?.Delta?.GetThinking();
+                    lastChatItem.Content += x?.Delta?.Content;
+                }
+            });
+            _ = page.ScrollHistoryToBottomAsync(false);
+        }
+    }
+
+    [RelayCommand]
+    public async Task Chat()
+    {
+        if (string.IsNullOrWhiteSpace(Input))
+        {
+            await page.DisplayAlertAsync("输入不能为空", "请输入内容后再发送", "好的");
+            Input = string.Empty;
+        }
+        else
+        {
+            Items.Add(new ChatItem { Role = Role.User, Content = Input });
+            Items.Add(new ChatItem { Role = Role.Assistant, Content = string.Empty });
+            _ = page.ScrollHistoryToBottomAsync(force: true);
+            string input = Input;
+            Input = string.Empty;
+            var result = await page.intelligenceService.Input(input);
+        }
+    }
+}
+```
