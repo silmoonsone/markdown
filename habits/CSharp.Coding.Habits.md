@@ -14,16 +14,31 @@
 
 - 单语句分支可不加大括号。
 - 只要分支体达到两行及以上，必须使用 `{}`。
-- 默认 `if` 和 `else` 分行写；只有在两边都非常短时，才可同一行。
+- 规则收紧：`if` 或 `else` 只有在分支体恰好 1 条语句时，才允许无大括号（含单行写法）。
+- 只要分支体是 2 条及以上语句，即使很短，也必须使用 `{}` 并按代码块格式书写。
+- 当分支体只有 1 条语句时，优先使用同一行写法（尤其是早返回）。
+- 仅在单语句本身明显过长时，才改为换行（仍可不加大括号）。
 - 早返回风格是常态，例如：
   - `if (cond) return null;`
   - `if (cond) return;`
+- 例如（偏好同一行）：
+  - `if (!TryValidateRepository(repository, out var repositoryError)) return false.ToStateSet<string>(null, repositoryError);`
 - 单语句但过长时允许换行，例如：
 
 ```csharp
 if (condition)
     DoSomethingVeryLongNameOrExpression();
 else return null;
+```
+
+- 多语句分支示例（必须使用大括号）：
+
+```csharp
+if (string.IsNullOrWhiteSpace(gitRef))
+{
+    error = "ref is required.";
+    return false;
+}
 ```
 
 ## 3. 参数与列表换行偏好
